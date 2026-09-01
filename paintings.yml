@@ -101,5 +101,21 @@
   format: "140 x 100 cm"
   # group: "miscellaneous"
 
+- file: staimping_elefantmanblanket.webp
+  title: "under cover"
+  year: 2026
+  medium: "Stamp ink on paper"
+  format: "150 x 100 cm"
+  # group: "miscellaneous"
+
+- file: staimping_acorn-palmtree.webp
+  title: "acorn dreams"
+  year: 2026
+  medium: "Stamp ink on paper"
+  format: "?? x ?? cm"
+  # group: "soon to be an oak tree?!"
+
+# Example: Convert to .webp using ImageMagick
+# convert IMG_3212.jpeg staimping_elefantmanblanket.webp
 
 # Add more entries here...
