@@ -115,6 +115,13 @@
   format: "?? x ?? cm"
   # group: "soon to be an oak tree?!"
 
+- file: staimping_acorn-eichelbohrer.webp
+  title: "acorn weevil"
+  year: 2026
+  medium: "Stamp ink on poplar wood"
+  format: "?? x ?? cm"
+  # group: "soon to be an oak tree?!"
+
 # Example: Convert to .webp using ImageMagick
 # convert IMG_3212.jpeg staimping_elefantmanblanket.webp
 
