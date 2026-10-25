@@ -1,0 +1,366 @@
+/* dm-sans-300 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 300;
+  src: url('../fonts/dm-sans-v17-latin-300.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* dm-sans-300italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 300;
+  src: url('../fonts/dm-sans-v17-latin-300italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* dm-sans-regular - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../fonts/dm-sans-v17-latin-regular.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* dm-sans-italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: url('../fonts/dm-sans-v17-latin-italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* dm-sans-500 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 500;
+  src: url('../fonts/dm-sans-v17-latin-500.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* dm-sans-500italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 500;
+  src: url('../fonts/dm-sans-v17-latin-500italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* ── Bootstrap / Cosmo variable overrides ──────────────────────────────────── */
+/*
+  These --bs-* variables are read by Bootstrap 5, so overriding them here
+  (in a file loaded after cosmo) changes the whole theme without !important hacks.
+*/
+:root {
+  --bs-font-sans-serif:    "DM Sans", system-ui, sans-serif;
+  --bs-body-font-weight:   300;
+  --bs-body-color:         #1a1a1a;
+  --bs-body-bg:            #ffffff;
+  --bs-link-color:         #1a1a1a;
+  --bs-link-hover-color:   #1a1a1a;
+  --bs-navbar-active-color:#1a1a1a;
+  --bs-navbar-hover-color: #1a1a1a;
+  --bs-navbar-color:       #888;
+
+  /* site-level variables */
+  --color-muted:  #888;
+  --color-line:   #e8e8e8;
+  --gap:          4px;
+  --cols:         3;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-decoration: none;
+}
+
+::selection {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* ── Navbar ─────────────────────────────────────────────────────────────────── */
+/* Quarto renders a Bootstrap 5 navbar; cosmo provides the collapse/mobile JS.
+   We just need to slim it down visually. */
+#quarto-header nav.navbar {
+  border-bottom: 1px solid var(--color-line);
+  background: #fff !important;
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: 56px;
+}
+
+.navbar-toggler {
+  border-color: #1a1a1a !important;
+}
+
+.navbar-toggler-icon {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%231a1a1a' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+}
+
+.navbar-brand {
+  font-size: 1rem !important;
+  font-weight: 400 !important;
+  color: #1a1a1a !important;
+}
+
+#quarto-header .nav-link {
+  font-size: 0.875rem;
+  font-weight: 300;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Remove cosmo's coloured active underline */
+#quarto-header .nav-link.active,
+#quarto-header .nav-link:hover {
+  border: none !important;
+  color: #1a1a1a !important;
+}
+
+/* ── Quarto layout overrides ─────────────────────────────────────────────────── */
+/* full-width gallery page: strip the default container padding */
+.page-layout-full #quarto-content,
+.page-layout-full main.content {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+}
+
+/* hide auto-generated title block on pages where title is "" */
+.quarto-title-block { display: none; }
+
+/* ── Gallery grid ───────────────────────────────────────────────────────────── */
+/*
+  CSS columns = free masonry layout.
+  Paintings stack naturally in columns, preserving each image's aspect ratio.
+  No JS needed for the layout itself.
+*/
+.gallery-grid {
+  columns: var(--cols);
+  column-gap: var(--gap);
+  padding: var(--gap);
+  width: 100%;
+}
+
+.gallery-item {
+  display: block;
+  break-inside: avoid;
+  margin-bottom: var(--gap);
+  position: relative;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: #f0f0f0;    /* placeholder colour while image loads */
+}
+
+.gallery-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transition: transform 0.4s ease, filter 0.4s ease;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.02);
+  filter: brightness(0.82);
+}
+
+/* Caption overlay — fades in on hover */
+.gallery-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1.25rem 1rem 0.9rem;
+  background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  color: #fff;
+}
+
+.gallery-item:hover .gallery-overlay {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gallery-title {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+
+.gallery-desc {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.8;
+  margin-top: 0.15rem;
+}
+
+/* ── Responsive columns ──────────────────────────────────────────────────────── */
+@media (max-width: 1100px) { .gallery-grid { columns: 2; } }
+@media (max-width:  640px) { .gallery-grid { columns: 1; } }
+
+/* ── GLightbox overrides ─────────────────────────────────────────────────────── */
+.glightbox-container .gslide-title {
+  font-family: "DM Sans", sans-serif;
+  font-weight: 400;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
+.glightbox-container .gslide-desc {
+  font-family: "DM Sans", sans-serif;
+  font-weight: 300;
+  font-size: 0.8rem;
+  color: #aaa;
+}
+
+/* ── About page ──────────────────────────────────────────────────────────────── */
+.about-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 4rem;
+  max-width: 900px;
+  margin: 5rem auto;
+  padding: 0 2rem;
+}
+
+.portrait {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
+}
+
+.about-text h2 {
+  font-size: 1.4rem;
+  font-weight: 400;
+  margin-bottom: 1.5rem;
+}
+
+.about-text p {
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.about-text hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 2rem 0;
+}
+
+/* Style the bold labels (Contact, Instagram, CV) */
+.about-text strong {
+  font-weight: 400;
+  display: block;
+  margin: 1rem 0 0.15rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+}
+
+@media (max-width: 760px) {
+  .about-layout {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    margin: 2.5rem auto;
+  }
+  .portrait { max-width: 240px; }
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────────── */
+#quarto-footer {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  font-weight: 300;
+}
+
+#quarto-header nav.navbar {
+  --bs-navbar-color: #888;
+  --bs-navbar-hover-color: #1a1a1a;
+  --bs-navbar-active-color: #1a1a1a;
+}
+/* ── Forest page ─────────────────────────────────────────────────────────────── */
+body:has(#forest-root) { overflow: hidden; }
+body:has(#forest-root) #quarto-footer,
+body:has(#forest-root) .nav-footer { display: none; }
+
+#forest-root {
+  position: fixed;
+  inset: 57px 0 0 0;            /* below the 56px navbar + border */
+  background: #efdcb4;
+  overflow: hidden;
+  font-family: "DM Sans", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#forest-root canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+#forest-root canvas:active { cursor: grabbing; }
+
+#forest-root .forest-loading {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  background: #efdcb4; color: #6b5a44;
+  font-size: 0.9rem; letter-spacing: 0.04em;
+  transition: opacity 1.2s ease;
+}
+#forest-root .forest-loading.is-hidden { opacity: 0; pointer-events: none; }
+
+#forest-root .forest-hint {
+  position: absolute; top: 1rem; left: 50%; transform: translateX(-50%);
+  margin: 0; padding: 0.5rem 0.9rem; max-width: calc(100% - 2rem);
+  background: rgba(255, 250, 238, 0.82); color: #3b3128;
+  border-radius: 999px; font-size: 0.8rem; text-align: center;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: opacity 1s ease; pointer-events: none;
+}
+#forest-root .forest-hint.is-hidden { opacity: 0; }
+#forest-root kbd {
+  font: inherit; font-size: 0.72rem; padding: 0 0.3rem; margin: 0 1px;
+  border: 1px solid rgba(59, 49, 40, 0.3); border-radius: 4px;
+  background: transparent; color: inherit; box-shadow: none;
+}
+
+#forest-root .forest-caption {
+  position: absolute; left: 50%; bottom: 1.25rem;
+  transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+  max-width: min(32rem, calc(100% - 7.5rem));
+  padding: 0.55rem 1.1rem 0.6rem;
+  border: 0; border-radius: 14px;
+  background: rgba(255, 250, 238, 0.88); color: #2a231c;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  cursor: zoom-in; font: inherit;
+}
+#forest-root .forest-caption.is-visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#forest-root .forest-caption-title { font-size: 0.95rem; font-weight: 400; }
+#forest-root .forest-caption-desc { font-size: 0.75rem; color: #7a6a58; font-weight: 300; }
+#forest-root .forest-caption-cta {
+  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: #a08a6e; margin-top: 0.15rem;
+}
+
+#forest-root .forest-nav {
+  position: absolute; right: 1rem; bottom: 1.25rem; display: flex; gap: 0.4rem;
+}
+#forest-root .forest-nav button {
+  width: 2.6rem; height: 2.6rem; border: 0; border-radius: 50%;
+  background: rgba(255, 250, 238, 0.85); color: #3b3128;
+  font-size: 1.4rem; line-height: 1; cursor: pointer;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: background 0.2s ease;
+}
+#forest-root .forest-nav button:hover { background: #fffaee; }
+
+@media (max-width: 640px) {
+  #forest-root .forest-caption { left: 1rem; transform: translate(0, 8px); max-width: calc(100% - 8rem); align-items: flex-start; }
+  #forest-root .forest-caption.is-visible { transform: translate(0, 0); }
+}

@@ -1,0 +1,30 @@
+---
+title: ""
+page-layout: custom
+---
+
+```{r}
+#| output: asis
+#| cache: false
+
+source("_paintings.R")   # same painting list as the grid gallery
+cat(sprintf('<script>window.__paintings = %s;</script>', paintings_json))
+```
+
+```{=html}
+<div id="forest-root">
+  <div class="forest-loading">walking into the forest …</div>
+  <p class="forest-hint"></p>
+  <button class="forest-caption" type="button" aria-live="polite">
+    <span class="forest-caption-title"></span>
+    <span class="forest-caption-desc"></span>
+    <span class="forest-caption-cta">view</span>
+  </button>
+  <div class="forest-nav">
+    <button class="forest-prev" type="button" aria-label="Previous painting">‹</button>
+    <button class="forest-next" type="button" aria-label="Next painting">›</button>
+  </div>
+  <noscript>The forest needs JavaScript — the <a href="index.html">grid gallery</a> works without.</noscript>
+</div>
+<script type="module" src="forest.js"></script>
+```

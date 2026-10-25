@@ -1,0 +1,22 @@
+---
+title: ""
+page-layout: full
+---
+
+```{r}
+#| output: asis
+#| cache: false
+
+source("_paintings.R")   # builds `imgs` and `paintings_json`
+
+if (length(imgs) == 0) {
+  # Output a plain HTML placeholder — a single self-contained tag, no open divs
+  cat('<p id="gallery-empty" style="padding:4rem 2rem;text-align:center;color:#888;font-size:.9rem;">',
+      'Add images to <code>images/paintings/</code> and re-render.',
+      '</p>')
+} else {
+  # Two self-contained HTML elements (no unclosed divs for pandoc to worry about)
+  cat('<div id="gallery-root"></div>')
+  cat(sprintf('<script>window.__paintings = %s;</script>', paintings_json))
+}
+```
