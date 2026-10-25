@@ -5,6 +5,7 @@ project:
     - images/         # copy all images to _site/ even though they're loaded via JS
     - fonts/
     - vendor/
+    - forest.js
 
 website:
   title: "Max Nölscher"
@@ -15,6 +16,8 @@ website:
     left:
       - href: index.qmd
         text: Work
+      - href: forest.qmd
+        text: Forest
       - href: about.qmd
         text: About
     right:

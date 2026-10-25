@@ -7,38 +7,7 @@ page-layout: full
 #| output: asis
 #| cache: false
 
-# ── Read optional metadata ────────────────────────────────────────────────────
-yml_path <- "paintings.yml"
-meta_map  <- list()
-if (file.exists(yml_path)) {
-  raw <- yaml::read_yaml(yml_path)
-  for (entry in raw) {
-    if (!is.null(entry$file)) meta_map[[tolower(entry$file)]] <- entry  # ← tolower
-  }
-}
-
-# ── Scan images folder ────────────────────────────────────────────────────────
-# All images physically present in the folder
-all_imgs <- list.files(
-  "images/paintings",
-  pattern     = "\\.(jpg|jpeg|png|webp)$",
-  full.names  = FALSE,
-  ignore.case = TRUE
-)
-
-# Build ordered list: YAML order first, then unlisted images appended
-yml_files <- vapply(raw, function(e) e$file, character(1))
-yml_files <- yml_files[tolower(yml_files) %in% tolower(all_imgs)]  # only keep ones that exist
-rest      <- all_imgs[!tolower(all_imgs) %in% tolower(yml_files)]  # unlisted images
-imgs      <- c(yml_files, rest)
-
-# ── Build JSON string (no external packages needed) ───────────────────────────
-esc_json <- function(s) {
-  s <- as.character(s)
-  s <- gsub("\\\\", "\\\\\\\\", s)   # escape backslashes first
-  s <- gsub('"',    '\\\\"',    s)   # escape double quotes
-  s
-}
+source("_paintings.R")   # builds `imgs` and `paintings_json`
 
 if (length(imgs) == 0) {
   # Output a plain HTML placeholder — a single self-contained tag, no open divs
@@ -46,23 +15,8 @@ if (length(imgs) == 0) {
       'Add images to <code>images/paintings/</code> and re-render.',
       '</p>')
 } else {
-  # Build JSON array of painting objects
-  entries <- vapply(imgs, function(img) {
-    m      <- meta_map[[tolower(img)]]
-    title  <- esc_json(if (!is.null(m$title))  m$title                else tools::file_path_sans_ext(img))
-    year   <- esc_json(if (!is.null(m$year))   as.character(m$year)   else "")
-    medium <- esc_json(if (!is.null(m$medium)) m$medium               else "")
-    format <- esc_json(if (!is.null(m$format)) m$format else "")
-    group  <- esc_json(if (!is.null(m$group))  m$group  else "default")
-    sprintf('{"file":"%s","title":"%s","year":"%s","medium":"%s","format":"%s","group":"%s"}',
-        esc_json(img), title, year, medium, format, group)
-  }, character(1))
-
-  json <- paste0("[", paste(entries, collapse = ","), "]")
-
   # Two self-contained HTML elements (no unclosed divs for pandoc to worry about)
   cat('<div id="gallery-root"></div>')
-  cat(sprintf('<script>window.__paintings = %s;</script>', json))
+  cat(sprintf('<script>window.__paintings = %s;</script>', paintings_json))
 }
 ```
-

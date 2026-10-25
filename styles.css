@@ -288,3 +288,79 @@ a {
   --bs-navbar-hover-color: #1a1a1a;
   --bs-navbar-active-color: #1a1a1a;
 }
+/* ── Forest page ─────────────────────────────────────────────────────────────── */
+body:has(#forest-root) { overflow: hidden; }
+body:has(#forest-root) #quarto-footer,
+body:has(#forest-root) .nav-footer { display: none; }
+
+#forest-root {
+  position: fixed;
+  inset: 57px 0 0 0;            /* below the 56px navbar + border */
+  background: #efdcb4;
+  overflow: hidden;
+  font-family: "DM Sans", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#forest-root canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+#forest-root canvas:active { cursor: grabbing; }
+
+#forest-root .forest-loading {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  background: #efdcb4; color: #6b5a44;
+  font-size: 0.9rem; letter-spacing: 0.04em;
+  transition: opacity 1.2s ease;
+}
+#forest-root .forest-loading.is-hidden { opacity: 0; pointer-events: none; }
+
+#forest-root .forest-hint {
+  position: absolute; top: 1rem; left: 50%; transform: translateX(-50%);
+  margin: 0; padding: 0.5rem 0.9rem; max-width: calc(100% - 2rem);
+  background: rgba(255, 250, 238, 0.82); color: #3b3128;
+  border-radius: 999px; font-size: 0.8rem; text-align: center;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: opacity 1s ease; pointer-events: none;
+}
+#forest-root .forest-hint.is-hidden { opacity: 0; }
+#forest-root kbd {
+  font: inherit; font-size: 0.72rem; padding: 0 0.3rem; margin: 0 1px;
+  border: 1px solid rgba(59, 49, 40, 0.3); border-radius: 4px;
+  background: transparent; color: inherit; box-shadow: none;
+}
+
+#forest-root .forest-caption {
+  position: absolute; left: 50%; bottom: 1.25rem;
+  transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+  max-width: min(32rem, calc(100% - 7.5rem));
+  padding: 0.55rem 1.1rem 0.6rem;
+  border: 0; border-radius: 14px;
+  background: rgba(255, 250, 238, 0.88); color: #2a231c;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  cursor: zoom-in; font: inherit;
+}
+#forest-root .forest-caption.is-visible { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#forest-root .forest-caption-title { font-size: 0.95rem; font-weight: 400; }
+#forest-root .forest-caption-desc { font-size: 0.75rem; color: #7a6a58; font-weight: 300; }
+#forest-root .forest-caption-cta {
+  font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: #a08a6e; margin-top: 0.15rem;
+}
+
+#forest-root .forest-nav {
+  position: absolute; right: 1rem; bottom: 1.25rem; display: flex; gap: 0.4rem;
+}
+#forest-root .forest-nav button {
+  width: 2.6rem; height: 2.6rem; border: 0; border-radius: 50%;
+  background: rgba(255, 250, 238, 0.85); color: #3b3128;
+  font-size: 1.4rem; line-height: 1; cursor: pointer;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: background 0.2s ease;
+}
+#forest-root .forest-nav button:hover { background: #fffaee; }
+
+@media (max-width: 640px) {
+  #forest-root .forest-caption { left: 1rem; transform: translate(0, 8px); max-width: calc(100% - 8rem); align-items: flex-start; }
+  #forest-root .forest-caption.is-visible { transform: translate(0, 0); }
+}
