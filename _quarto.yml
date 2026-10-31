@@ -40,6 +40,8 @@ format:
     include-after-body:
       text: |
         <script src="vendor/glightbox/glightbox.min.js"></script>
+        <script data-goatcounter="https://mxnl.goatcounter.com/count"
+                async src="//gc.zgo.at/count.js"></script>
         <script>
         document.addEventListener("DOMContentLoaded", function () {
 
