@@ -1,43 +1,51 @@
-// forest.js — a small walkable forest that shows the paintings from paintings.yml
+// forest.js — a deep, dark forest you can walk through to see the paintings
 // ─────────────────────────────────────────────────────────────────────────────
 // Everything (trees, ground, light) is generated in code — no 3D model files.
 // The only dependency is three.js, vendored in vendor/three/.
 //
+// The mood: dusk under a closed canopy. Light only falls through a few gaps,
+// and most of those gaps are right above a painting.
 // Things you might want to tweak are collected in CONFIG right below.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as THREE from "./vendor/three/three.module.min.js";
 
+const isTouch = matchMedia("(pointer: coarse)").matches;
 const CONFIG = {
   seed: 20261025,          // change to get a different (but stable) forest layout
-  spacing: 7.5,            // metres of trail between two paintings
+  spacing: 8,              // metres of trail between two paintings
   eyeHeight: 1.62,
-  walkSpeed: 2.4,          // m/s  (Shift = faster)
+  walkSpeed: 2.2,          // m/s  (Shift = faster)
   maxTexture: 1024,        // px — paintings are downscaled to this for the GPU
-  autumn: 0.28,            // share of deciduous trees in autumn colours (0 … 1)
+  fogDensity: 0.062,       // higher = darker, closer forest
+  ambient: 0.75,           // brightness between the light shafts
+  shaftLight: 70,          // brightness of the light falling on a painting
+  litPaintings: isTouch ? 3 : 4, // nearby paintings that get a real light at once
+  extraShafts: 7,          // gaps in the canopy that don't hold a painting
+  canopyY: 15,             // height of the canopy (metres)
   colors: {
-    zenith:  "#9cc6dc",
-    horizon: "#efdcb4",    // also the fog colour
-    sun:     "#ffd49a",
-    hemiSky: "#d7e9f5",
-    hemiGround: "#8f8c55",
-    grass:   ["#6f9845", "#7ea64c", "#5f8a3d", "#8aae55"],
-    moss:    "#58803a",
-    path:    "#b89c6e",
-    trunk:   "#6b4a33",
-    pine:    ["#3e6d41", "#4b7c46", "#37623c"],
-    leaf:    ["#5d8f3b", "#6e9e43", "#4f7f36"],
-    autumn:  ["#d9873a", "#e2ad3e", "#c8662f"],
-    birch:   ["#93b04a", "#b5bd4a", "#e0b84a"],
-    wood:    "#7a5638",
-    plaque:  "#efe6d2",
+    fog:     "#0f1b1b",
+    skyHole: "#2e403d",    // what you see through the gaps in the canopy
+    canopy:  "#070c0b",
+    hemiSky: "#5b7479",
+    hemiGround: "#1a1f13",
+    beam:    "#ffe7bf",    // the light falling through the canopy
+    soil:    ["#2a281b", "#2f2c1e", "#262418"],
+    moss:    "#233621",
+    needles: "#3a2e1f",
+    path:    "#4a3f2e",
+    trunk:   ["#2c241e", "#332a22", "#262019"],
+    pine:    ["#18291f", "#1d3024", "#152419"],
+    fern:    ["#24402a", "#2c4a2c", "#1f3825"],
+    fungus:  "#bfeee0",
+    wood:    "#3b2c20",
+    plaque:  "#c9bc9c",
   },
 };
 
 const root = document.getElementById("forest-root");
 const paintings = (window.__paintings || []).slice();
 const IMG_DIR = "images/paintings/";
-const isTouch = matchMedia("(pointer: coarse)").matches;
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 function mulberry32(a) {
@@ -86,13 +94,17 @@ function wobble(geo, amt) {
   }
   return geo;
 }
-function paint(geo, color, jitter = 0.06) {
+// colorFn(cx, cy, cz) may return a hex string per triangle (e.g. moss low on trunks)
+function paint(geo, color, jitter = 0.06, colorFn = null) {
   geo = geo.index ? geo.toNonIndexed() : geo;
-  const n = geo.attributes.position.count;
+  const p = geo.attributes.position, n = p.count;
   const col = new Float32Array(n * 3);
-  const base = new THREE.Color(color), c = new THREE.Color();
+  const c = new THREE.Color();
   for (let i = 0; i < n; i += 3) {
-    c.copy(base).offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * jitter);
+    const cy = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+    const cx = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3;
+    const cz = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3;
+    c.set((colorFn && colorFn(cx, cy, cz)) || color).offsetHSL((rand() - 0.5) * 0.02, 0, (rand() - 0.5) * jitter);
     for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
   }
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -115,45 +127,40 @@ function merge(geos) {
   out.computeVertexNormals();
   return out;
 }
+function radialTexture(stops, size = 128) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = size;
+  const g = cv.getContext("2d"), gr = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  stops.forEach(([o, c]) => gr.addColorStop(o, c));
+  g.fillStyle = gr; g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(cv);
+}
 
 // ── Renderer, scene, camera ──────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 1.75));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.shadowMap.autoUpdate = false; // the forest doesn't move, so render shadows once
+renderer.toneMappingExposure = 1.0;
 root.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 const C = CONFIG.colors;
-scene.fog = new THREE.FogExp2(C.horizon, 0.028);
+scene.fog = new THREE.FogExp2(C.fog, CONFIG.fogDensity);
+scene.background = new THREE.Color(C.fog);
 
-const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
 camera.rotation.order = "YXZ";
 
-// Sky dome: soft gradient with a warm glow around the sun
-const sunDir = new THREE.Vector3(-0.55, 0.36, -0.75).normalize();
+// Sky dome: only visible through the gaps in the canopy
 const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(300, 32, 16),
+  new THREE.SphereGeometry(200, 24, 12),
   new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: {
-      zenith: { value: new THREE.Color(C.zenith) },
-      horizon: { value: new THREE.Color(C.horizon) },
-      sunCol: { value: new THREE.Color("#fff3d6") },
-      sunDir: { value: sunDir },
-    },
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position);
+    uniforms: { top: { value: new THREE.Color(C.skyHole) }, bottom: { value: new THREE.Color(C.fog) } },
+    vertexShader: `varying float vY; void main(){ vY = normalize(position).y;
       vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
-    fragmentShader: `uniform vec3 zenith, horizon, sunCol, sunDir; varying vec3 vDir;
-      void main(){ float h = max(vDir.y, 0.0);
-        vec3 col = mix(horizon, zenith, pow(smoothstep(0.0, 0.7, h), 0.8));
-        float s = max(dot(normalize(vDir), sunDir), 0.0);
-        col += sunCol * (pow(s, 12.0) * 0.45 + pow(s, 300.0) * 0.8);
-        gl_FragColor = vec4(col, 1.0);
+    fragmentShader: `uniform vec3 top, bottom; varying float vY;
+      void main(){ gl_FragColor = vec4(mix(bottom, top, smoothstep(0.05, 0.6, vY)), 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`,
@@ -162,16 +169,20 @@ const sky = new THREE.Mesh(
 sky.frustumCulled = false;
 scene.add(sky);
 
-// Light: low, golden afternoon sun + sky/ground bounce
-scene.add(new THREE.HemisphereLight(C.hemiSky, C.hemiGround, 1.65));
-const sun = new THREE.DirectionalLight(C.sun, 2.5);
-scene.add(sun, sun.target);
+// Dim, cool light from above — the canopy swallows most of the evening sky
+scene.add(new THREE.HemisphereLight(C.hemiSky, C.hemiGround, CONFIG.ambient));
+const topLight = new THREE.DirectionalLight("#7f9aa3", 0.28);
+topLight.position.set(0.3, 1, 0.2);
+scene.add(topLight);
+
+// Direction the light falls from (all shafts are parallel, like low sun)
+const beamDir = new THREE.Vector3(0.32, 1, 0.18).normalize();
 
 // ── Layout: a winding loop trail with the paintings scattered along it ──────
 const N = Math.max(paintings.length, 1);
 const trailR = Math.max(9, (N * CONFIG.spacing) / (Math.PI * 2));
 const walkR = trailR * 1.32 + 5;
-const worldR = walkR + 20;
+const worldR = walkR + 22;
 const ph1 = R(0, 6.28), ph2 = R(0, 6.28);
 
 const trail = [];
@@ -203,133 +214,13 @@ const spots = paintings.map((p, i) => {
   const side = rand() < 0.5 ? -1 : 1;
   const off = R(2.6, 3.8);
   const x = a.x + (-tz / tl) * off * side, z = a.y + (tx / tl) * off * side;
-  // face the trail, slightly turned in the walking direction
-  const rot = Math.atan2(a.x - x, a.y - z) + R(-0.35, 0.35);
+  const rot = Math.atan2(a.x - x, a.y - z) + R(-0.35, 0.35); // face the trail
   return { x, z, rot, idx, p, i };
 });
 
-// ── Ground ───────────────────────────────────────────────────────────────────
-{
-  const size = worldR * 2 + 40, seg = isTouch ? 110 : 150;
-  let geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, groundHeight(pos.getX(i), pos.getZ(i)));
-  geo = geo.toNonIndexed();
-  const p = geo.attributes.position, n = p.count;
-  const col = new Float32Array(n * 3), c = new THREE.Color();
-  const grass = C.grass.map((g) => new THREE.Color(g)), moss = new THREE.Color(C.moss), dirt = new THREE.Color(C.path);
-  for (let i = 0; i < n; i += 3) {
-    const cx = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3;
-    const cz = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3;
-    const nz = noise(cx * 0.15, cz * 0.15);
-    c.copy(grass[Math.floor(hash(cx, cz) * grass.length)]).lerp(moss, Math.max(0, nz - 0.45) * 1.4);
-    const rr = Math.hypot(cx, cz);
-    if (rr > trailR * 0.6 && rr < trailR * 1.45) {
-      const d = nearestOnTrail(cx, cz).d;
-      const w = 1 - THREE.MathUtils.smoothstep(d, 0.55, 1.15 + noise(cx, cz) * 0.4);
-      c.lerp(dirt, w * 0.92);
-    }
-    c.offsetHSL(0, 0, (hash(cz, cx) - 0.5) * 0.04);
-    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
-  }
-  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  geo.computeVertexNormals();
-  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
-  ground.receiveShadow = true;
-  ground.name = "ground";
-  scene.add(ground);
-  var groundMesh = ground;
-}
-
-// ── Wind: gentle sway for foliage (shader patch) ─────────────────────────────
-const windUniform = { value: 0 };
-function windy(mat, start = 1.4, amt = 0.022) {
-  mat.onBeforeCompile = (s) => {
-    s.uniforms.uTime = windUniform;
-    s.vertexShader = "uniform float uTime;\n" + s.vertexShader.replace(
-      "#include <begin_vertex>",
-      `#include <begin_vertex>
-       float ph = 0.0;
-       #ifdef USE_INSTANCING
-         ph = instanceMatrix[3].x * 0.31 + instanceMatrix[3].z * 0.23;
-       #endif
-       float sw = max(0.0, position.y - ${start.toFixed(2)}) * ${amt.toFixed(3)};
-       transformed.x += sin(uTime * 1.2 + ph) * sw;
-       transformed.z += cos(uTime * 0.9 + ph * 1.7) * sw * 0.7;`
-    );
-  };
-  return mat;
-}
-
-// ── Tree & plant geometry (generated) ────────────────────────────────────────
-function makePine(tiers) {
-  const parts = [], h = 8;
-  const th = h * 0.3;
-  parts.push(paint(new THREE.CylinderGeometry(0.11, 0.22, th + 1, 6).translate(0, (th + 1) / 2 - 0.3, 0), C.trunk));
-  let y = th * 0.75, r = 1.9;
-  const green = pick(C.pine);
-  for (let i = 0; i < tiers; i++) {
-    const ch = 3.0 - i * 0.25;
-    parts.push(paint(wobble(new THREE.ConeGeometry(r, ch, 7, 1).translate(0, y + ch / 2, 0), 0.25), green, 0.09));
-    y += ch * 0.52; r *= 0.74;
-  }
-  return merge(parts);
-}
-function makeRound(colors) {
-  const parts = [];
-  parts.push(paint(new THREE.CylinderGeometry(0.13, 0.24, 4.2, 6).translate(0, 1.8, 0), C.trunk));
-  parts.push(paint(new THREE.CylinderGeometry(0.05, 0.08, 1.4, 5).rotateZ(0.8).translate(0.55, 3.0, 0), C.trunk));
-  const leaf = pick(colors);
-  const blobs = [[0, 4.6, 0, 1.9], [1.1, 4.0, 0.4, 1.3], [-0.9, 4.1, -0.5, 1.35], [0.2, 5.6, -0.2, 1.2]];
-  blobs.forEach(([x, y, z, r]) =>
-    parts.push(paint(wobble(new THREE.IcosahedronGeometry(r, 1), 0.35).translate(x, y, z), leaf, 0.1)));
-  return merge(parts);
-}
-function makeBirch(colors) {
-  const parts = [];
-  const trunk = paint(new THREE.CylinderGeometry(0.07, 0.12, 6, 5, 6).translate(0, 2.8, 0), "#e9e5da", 0.04);
-  const tc = trunk.attributes.color; // a few dark bark marks
-  for (let i = 0; i < tc.count; i += 3) if (rand() < 0.18) for (let k = 0; k < 3; k++) tc.setXYZ(i + k, 0.13, 0.12, 0.11);
-  parts.push(trunk);
-  const leaf = pick(colors);
-  [[0, 5.4, 0, 1.1], [0.5, 4.5, 0.3, 0.8], [-0.4, 4.7, -0.3, 0.85], [0.1, 6.2, 0.1, 0.7]].forEach(([x, y, z, r]) =>
-    parts.push(paint(wobble(new THREE.IcosahedronGeometry(r, 1), 0.25).translate(x, y, z), leaf, 0.1)));
-  return merge(parts);
-}
-function makeBush() {
-  const g = pick(C.leaf);
-  return merge([
-    paint(wobble(new THREE.IcosahedronGeometry(0.75, 1), 0.25).scale(1, 0.75, 1).translate(0, 0.4, 0), g, 0.1),
-    paint(wobble(new THREE.IcosahedronGeometry(0.5, 1), 0.2).scale(1, 0.8, 1).translate(0.55, 0.3, 0.2), g, 0.1),
-  ]);
-}
-function makeMushroom() {
-  return merge([
-    paint(new THREE.CylinderGeometry(0.035, 0.05, 0.16, 6).translate(0, 0.08, 0), "#efe7d4", 0.03),
-    paint(new THREE.SphereGeometry(0.12, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.75, 1).translate(0, 0.15, 0), "#c9412e", 0.05),
-  ]);
-}
-function makeRock() {
-  return merge([paint(wobble(new THREE.DodecahedronGeometry(0.5, 0), 0.2).scale(1, 0.6, 0.8), "#8d9183", 0.08)]);
-}
-function makeTuft() {
-  const geo = new THREE.BufferGeometry(), pos = [], col = [];
-  const dark = new THREE.Color("#4d7a32"), light = new THREE.Color("#9fbf5c");
-  for (let k = 0; k < 5; k++) {
-    const a = (k / 5) * Math.PI * 2 + rand(), w = 0.035, h = R(0.22, 0.42), lean = R(0.05, 0.16);
-    const cx = Math.cos(a), cz = Math.sin(a);
-    pos.push(-cz * w, 0, cx * w, cz * w, 0, -cx * w, cx * lean, h, cz * lean);
-    col.push(dark.r, dark.g, dark.b, dark.r, dark.g, dark.b, light.r, light.g, light.b);
-  }
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
 // ── Place things ─────────────────────────────────────────────────────────────
 const obstacles = []; // circles {x, z, r} the visitor can't walk through
-const placed = [];    // for spacing checks
+const placed = [];    // trees, for spacing checks and ground shading
 function freeAt(x, z, minTree) {
   for (const s of spots) {
     if (Math.hypot(x - s.x, z - s.z) < 3.2) return false;
@@ -340,118 +231,359 @@ function freeAt(x, z, minTree) {
   return true;
 }
 
-const variants = {
-  pine: [makePine(3), makePine(4), makePine(4)],
-  round: [makeRound(C.leaf), makeRound(C.leaf), makeRound(C.autumn), makeRound(C.autumn)],
-  birch: [makeBirch(C.birch), makeBirch(C.birch)],
-  bush: [makeBush(), makeBush()],
-};
-const instances = new Map(); // geometry -> list of matrices
-function addInstance(geo, x, z, s, sink = 0.05) {
-  if (!instances.has(geo)) instances.set(geo, []);
-  const m = new THREE.Matrix4().compose(
-    new THREE.Vector3(x, groundHeight(x, z) - sink, z),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(R(-0.04, 0.04), R(0, 6.28), R(-0.04, 0.04))),
-    new THREE.Vector3(s, s * R(0.9, 1.15), s)
-  );
-  instances.get(geo).push(m);
+// Tree shapes: tall old trunks that vanish into the canopy, tall dark spruces,
+// young firs in the undergrowth.
+const mossy = (low) => (x, y) => (y < low && rand() < 0.45 ? C.moss : null);
+function makeOldTrunk() {
+  const parts = [];
+  const r0 = R(0.42, 0.6);
+  parts.push(paint(wobble(new THREE.CylinderGeometry(r0 * 0.7, r0, 24, 8, 8).translate(0, 11.6, 0), 0.08), pick(C.trunk), 0.07, mossy(3.2)));
+  parts.push(paint(wobble(new THREE.ConeGeometry(r0 * 1.7, 1.4, 8, 1, true).translate(0, 0.45, 0), 0.15), pick(C.trunk), 0.07, mossy(2)));
+  for (let k = 0; k < 4; k++) { // broken branch stubs
+    const y = R(4, 13), a = R(0, 6.28), l = R(0.6, 1.6);
+    parts.push(paint(new THREE.CylinderGeometry(0.03, 0.09, l, 5).rotateZ(R(0.9, 1.3)).translate(l * 0.45, y, 0).rotateY(a), pick(C.trunk)));
+  }
+  return merge(parts);
+}
+function makeTallSpruce() {
+  const parts = [];
+  parts.push(paint(new THREE.CylinderGeometry(0.12, 0.32, 20, 6).translate(0, 9.7, 0), pick(C.trunk), 0.06, mossy(2.5)));
+  for (let k = 0; k < 6; k++) { // dead lower twigs
+    const y = R(2.5, 7.5), a = R(0, 6.28), l = R(0.5, 1.2);
+    parts.push(paint(new THREE.CylinderGeometry(0.01, 0.04, l, 4).rotateZ(R(1.1, 1.8)).translate(l * 0.45, y, 0).rotateY(a), "#2a241e"));
+  }
+  let y = 7.5, r = 2.4;
+  const green = pick(C.pine);
+  for (let i = 0; i < 6; i++) {
+    const ch = 3.4 - i * 0.25;
+    parts.push(paint(wobble(new THREE.ConeGeometry(r, ch, 8, 1).translate(0, y + ch / 2, 0), 0.35), green, 0.08));
+    y += ch * 0.55; r *= 0.83;
+  }
+  return merge(parts);
+}
+function makeFir() {
+  const parts = [paint(new THREE.CylinderGeometry(0.05, 0.1, 1, 5).translate(0, 0.4, 0), pick(C.trunk))];
+  let y = 0.5, r = 0.9;
+  const green = pick(C.pine);
+  for (let i = 0; i < 3; i++) {
+    parts.push(paint(wobble(new THREE.ConeGeometry(r, 1.3, 7, 1).translate(0, y + 0.65, 0), 0.15), green, 0.08));
+    y += 0.75; r *= 0.72;
+  }
+  return merge(parts);
+}
+function makeFern() {
+  const geo = new THREE.BufferGeometry(), pos = [], col = [];
+  const base = new THREE.Color(pick(C.fern)), tip = base.clone().offsetHSL(0.02, 0, 0.07);
+  const fronds = 7;
+  for (let f = 0; f < fronds; f++) {
+    const a = (f / fronds) * Math.PI * 2 + R(-0.2, 0.2), len = R(0.6, 1.0), segs = 5;
+    const dx = Math.cos(a), dz = Math.sin(a), px = -dz, pz = dx;
+    let prev = null;
+    for (let s = 0; s <= segs; s++) {
+      const t = s / segs, d = t * len, h = Math.sin(t * Math.PI * 0.8) * 0.45 * len;
+      const w = Math.sin(t * Math.PI) * 0.12;
+      const cx = dx * d, cz = dz * d;
+      const L = [cx + px * w, h, cz + pz * w], Rr = [cx - px * w, h, cz - pz * w];
+      if (prev) {
+        const c0 = base.clone().lerp(tip, (s - 1) / segs), c1 = base.clone().lerp(tip, s / segs);
+        pos.push(...prev[0], ...prev[1], ...L, ...prev[1], ...Rr, ...L);
+        [c0, c0, c1, c0, c1, c1].forEach((c) => col.push(c.r, c.g, c.b));
+      }
+      prev = [L, Rr];
+    }
+  }
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+function makeFungi() {
+  const parts = [];
+  for (let k = 0; k < 5; k++) {
+    const x = R(-0.15, 0.15), z = R(-0.15, 0.15), s = R(0.5, 1.1);
+    parts.push(paint(new THREE.CylinderGeometry(0.012 * s, 0.016 * s, 0.09 * s, 5).translate(x, 0.045 * s, z), "#9fcfc2", 0));
+    parts.push(paint(new THREE.SphereGeometry(0.035 * s, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.6, 1).translate(x, 0.09 * s, z), C.fungus, 0));
+  }
+  return merge(parts);
+}
+function makeRock() {
+  return merge([paint(wobble(new THREE.DodecahedronGeometry(0.5, 0), 0.2).scale(1, 0.6, 0.8), "#3a3d36", 0.08,
+    (x, y) => (y > 0.1 && rand() < 0.6 ? C.moss : null))]);
 }
 
-const maxTrees = isTouch ? 320 : 420;
-for (let attempt = 0; attempt < 9000 && placed.length < maxTrees; attempt++) {
+const variants = {
+  old: [makeOldTrunk(), makeOldTrunk(), makeOldTrunk()],
+  spruce: [makeTallSpruce(), makeTallSpruce(), makeTallSpruce()],
+  fir: [makeFir(), makeFir()],
+};
+const instances = new Map(); // geometry or name -> list of matrices
+function addInstance(key, x, z, s, sink = 0.05, tilt = 0.03) {
+  if (!instances.has(key)) instances.set(key, []);
+  instances.get(key).push(new THREE.Matrix4().compose(
+    new THREE.Vector3(x, groundHeight(x, z) - sink, z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(R(-tilt, tilt), R(0, 6.28), R(-tilt, tilt))),
+    new THREE.Vector3(s, s * R(0.9, 1.15), s)
+  ));
+}
+
+const maxTrees = isTouch ? 360 : 480;
+for (let attempt = 0; attempt < 12000 && placed.length < maxTrees; attempt++) {
   const a = R(0, Math.PI * 2), r = Math.sqrt(rand()) * worldR;
   const x = Math.cos(a) * r, z = Math.sin(a) * r;
   const inner = r < walkR;
-  if (inner && rand() > 0.42) continue;                // more open inside the walkable area
-  if (nearestOnTrail(x, z).d < 2.3) continue;           // keep the trail clear
-  if (Math.hypot(x - trail[0].x, z - trail[0].y) < 6.5) continue;   // open view at the start
-  if (!freeAt(x, z, inner ? 3.0 : 2.3)) continue;
+  if (inner && rand() > 0.55) continue;
+  if (nearestOnTrail(x, z).d < 2.0) continue;                         // keep the trail clear
+  if (Math.hypot(x - trail[0].x, z - trail[0].y) < 4.5) continue;
+  if (!freeAt(x, z, inner ? 2.6 : 2.0)) continue;
 
   const roll = rand();
-  let kind;
-  if (!inner) kind = roll < 0.62 ? "pine" : roll < 0.85 ? "round" : "birch";
-  else kind = roll < 0.3 ? "pine" : roll < 0.62 ? "round" : roll < 0.8 ? "birch" : "bush";
-  let geo = pick(variants[kind]);
-  if (kind === "round") geo = rand() < CONFIG.autumn ? pick(variants.round.slice(2)) : pick(variants.round.slice(0, 2));
-  const s = kind === "bush" ? R(0.7, 1.3) : R(0.75, 1.35);
-  addInstance(geo, x, z, s, kind === "bush" ? 0.15 : 0.05);
-  placed.push({ x, z });
-  if (r < walkR + 3) obstacles.push({ x, z, r: kind === "bush" ? 0.75 * s : 0.3 * s + 0.05 });
+  const kind = roll < 0.4 ? "old" : roll < 0.78 ? "spruce" : "fir";
+  const s = kind === "fir" ? R(0.7, 1.5) : R(0.85, 1.25);
+  addInstance(pick(variants[kind]), x, z, s, 0.1);
+  placed.push({ x, z, kind });
+  if (r < walkR + 3) obstacles.push({ x, z, r: kind === "old" ? 0.6 * s : kind === "spruce" ? 0.35 * s : 0.55 * s });
 
-  // little things around tree bases
-  if (kind !== "bush" && rand() < 0.22) {
-    const k = 1 + Math.floor(rand() * 3);
-    for (let i = 0; i < k; i++) addInstance("mushroom", x + R(-1, 1), z + R(-1, 1), R(0.6, 1.4), 0.02);
-  }
+  if (kind !== "fir" && rand() < 0.22) addInstance("fungi", x + R(-0.9, 0.9), z + R(-0.9, 0.9), R(0.8, 1.4), 0);
 }
-for (let i = 0; i < 45; i++) {
+for (let i = 0; i < 55; i++) {
   const a = R(0, 6.28), r = Math.sqrt(rand()) * (walkR + 8), x = Math.cos(a) * r, z = Math.sin(a) * r;
   if (nearestOnTrail(x, z).d < 1.4 || !freeAt(x, z, 1.2)) continue;
-  const s = R(0.5, 1.6);
-  addInstance("rock", x, z, s, 0.12 * s);
+  const s = R(0.5, 1.8);
+  addInstance("rock", x, z, s, 0.12 * s, 0.3);
   if (r < walkR + 2 && s > 1) obstacles.push({ x, z, r: 0.45 * s });
 }
-const tuftCount = isTouch ? 1800 : 3200;
-for (let i = 0; i < tuftCount; i++) {
-  const a = R(0, 6.28), r = Math.sqrt(rand()) * (walkR + 10), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (r > trailR * 0.6 && r < trailR * 1.45 && nearestOnTrail(x, z).d < 0.9) continue;
-  addInstance("tuft", x, z, R(0.7, 1.5), 0);
-}
-for (let i = 0; i < 380; i++) {
-  const a = R(0, 6.28), r = Math.sqrt(rand()) * (walkR + 4), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (r > trailR * 0.6 && r < trailR * 1.45 && nearestOnTrail(x, z).d < 0.8) continue;
-  addInstance("flower", x, z, R(0.7, 1.3), 0);
+const fernCount = isTouch ? 900 : 1500;
+for (let i = 0; i < fernCount; i++) {
+  const a = R(0, 6.28), r = Math.sqrt(rand()) * (walkR + 12), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (r > trailR * 0.6 && r < trailR * 1.45 && nearestOnTrail(x, z).d < 1.0) continue;
+  if (spots.some((s) => Math.hypot(x - s.x, z - s.z) < 1.2)) continue;
+  addInstance("fern", x, z, R(0.6, 1.5), 0, 0.15);
 }
 
-const baseGeos = {
-  mushroom: makeMushroom(),
-  rock: makeRock(),
-  tuft: makeTuft(),
-  flower: merge([
-    paint(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 3).translate(0, 0.11, 0), "#4f7a32", 0),
-    paint(new THREE.IcosahedronGeometry(0.045, 0).translate(0, 0.23, 0), "#ffffff", 0),
-  ]),
-};
-const flowerTints = ["#fff7e8", "#f4d34f", "#c9a6e8", "#f2a3b3", "#fff7e8"];
+// A few fallen, mossy logs
+const logs = [];
+for (let i = 0, tries = 0; i < 4 && tries < 300; tries++) {
+  const a = R(0, 6.28), r = R(trailR * 0.3, walkR - 2), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (nearestOnTrail(x, z).d < 3.2 || !freeAt(x, z, 3)) continue;
+  const len = R(3, 5), rot = R(0, 3.14);
+  logs.push({ x, z, len, rot });
+  for (let k = -1; k <= 1; k++)
+    obstacles.push({ x: x + Math.cos(rot) * k * len * 0.35, z: z - Math.sin(rot) * k * len * 0.35, r: 0.45 });
+  placed.push({ x, z, kind: "log" });
+  i++;
+}
+
+// ── Light shafts: one above every painting, plus a few empty ones ────────────
+// Each shaft = a soft additive beam + a pool of light on the ground + a hole in
+// the canopy. Nearby paintings also get a real spotlight (see the light pool).
+const shafts = [];
+spots.forEach((s) => shafts.push({ x: s.x + Math.sin(s.rot) * 0.6, z: s.z + Math.cos(s.rot) * 0.6, r: 1.25, spot: s }));
+for (let i = 0, tries = 0; i < CONFIG.extraShafts && tries < 400; tries++) {
+  const a = R(0, 6.28), r = Math.sqrt(rand()) * (walkR + 6), x = Math.cos(a) * r, z = Math.sin(a) * r;
+  if (shafts.some((h) => Math.hypot(h.x - x, h.z - z) < 6)) continue;
+  shafts.push({ x, z, r: R(0.8, 1.4), spot: null });
+  i++;
+}
+shafts.forEach((h) => {
+  h.y = groundHeight(h.x, h.z);
+  const k = (CONFIG.canopyY - h.y) / beamDir.y;
+  h.topX = h.x + beamDir.x * k;
+  h.topZ = h.z + beamDir.z * k;
+});
+
+// ── Ground (shaded darker under trees, lighter in the light pools) ──────────
+const grid = new Map(); // spatial hash of trees for quick lookups
+placed.forEach((t) => {
+  const k = Math.floor(t.x / 4) + "," + Math.floor(t.z / 4);
+  if (!grid.has(k)) grid.set(k, []);
+  grid.get(k).push(t);
+});
+function treeShade(x, z) {
+  let s = 0;
+  const gx = Math.floor(x / 4), gz = Math.floor(z / 4);
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    const list = grid.get(gx + i + "," + (gz + j));
+    if (list) for (const t of list) s += Math.max(0, 1 - Math.hypot(x - t.x, z - t.z) / 2.6);
+  }
+  return Math.min(1, s);
+}
+let groundMesh;
+{
+  const size = worldR * 2 + 40, seg = isTouch ? 110 : 150;
+  let geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, groundHeight(pos.getX(i), pos.getZ(i)));
+  geo = geo.toNonIndexed();
+  const p = geo.attributes.position, n = p.count;
+  const col = new Float32Array(n * 3), c = new THREE.Color();
+  const soil = C.soil.map((g) => new THREE.Color(g)), moss = new THREE.Color(C.moss),
+    needles = new THREE.Color(C.needles), dirt = new THREE.Color(C.path), black = new THREE.Color("#080a07");
+  for (let i = 0; i < n; i += 3) {
+    const cx = (p.getX(i) + p.getX(i + 1) + p.getX(i + 2)) / 3;
+    const cz = (p.getZ(i) + p.getZ(i + 1) + p.getZ(i + 2)) / 3;
+    c.copy(soil[Math.floor(hash(cx, cz) * soil.length)]);
+    c.lerp(moss, Math.max(0, noise(cx * 0.15, cz * 0.15) - 0.4) * 1.5);
+    c.lerp(needles, Math.max(0, noise(cx * 0.3 + 40, cz * 0.3) - 0.55) * 1.6);
+    const rr = Math.hypot(cx, cz);
+    if (rr > trailR * 0.6 && rr < trailR * 1.45) {
+      const d = nearestOnTrail(cx, cz).d;
+      c.lerp(dirt, (1 - THREE.MathUtils.smoothstep(d, 0.5, 1.1 + noise(cx, cz) * 0.4)) * 0.9);
+    }
+    c.lerp(black, treeShade(cx, cz) * 0.45);
+    c.offsetHSL(0, 0, (hash(cz, cx) - 0.5) * 0.025);
+    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (i + k) * 3);
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  groundMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  scene.add(groundMesh);
+}
+
+// ── Wind: a slow sway for the crowns and ferns (shader patch) ────────────────
+const windUniform = { value: 0 };
+function windy(mat, start = 6, amt = 0.012) {
+  mat.onBeforeCompile = (s) => {
+    s.uniforms.uTime = windUniform;
+    s.vertexShader = "uniform float uTime;\n" + s.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+       float ph = 0.0;
+       #ifdef USE_INSTANCING
+         ph = instanceMatrix[3].x * 0.31 + instanceMatrix[3].z * 0.23;
+       #endif
+       float sw = max(0.0, position.y - ${start.toFixed(2)}) * ${amt.toFixed(3)};
+       transformed.x += sin(uTime * 0.6 + ph) * sw;
+       transformed.z += cos(uTime * 0.45 + ph * 1.7) * sw * 0.7;`
+    );
+  };
+  return mat;
+}
+
+const baseGeos = { fungi: makeFungi(), rock: makeRock(), fern: makeFern() };
 const treeMat = windy(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
-const tuftMat = windy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 0.05, 0.25);
+const fernMat = windy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, flatShading: true }), 0.05, 0.12);
 const staticMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+// glowing fungi: unlit, so they shine faintly in the dark
+const fungiMat = new THREE.MeshBasicMaterial({ vertexColors: true });
 
 const tint = new THREE.Color();
 for (const [key, mats] of instances) {
   const geo = typeof key === "string" ? baseGeos[key] : key;
-  const isTree = typeof key !== "string";
-  const mat = isTree ? treeMat : key === "tuft" || key === "flower" ? tuftMat : staticMat;
+  const mat = typeof key !== "string" ? treeMat : key === "fern" ? fernMat : key === "fungi" ? fungiMat : staticMat;
   const mesh = new THREE.InstancedMesh(geo, mat, mats.length);
   mats.forEach((m, i) => {
     mesh.setMatrixAt(i, m);
-    if (key === "flower") tint.set(pick(flowerTints));
-    else tint.setHSL(0, 0, R(0.88, 1.08));
+    tint.setHSL(0, 0, key === "fungi" ? R(0.6, 1) : R(0.85, 1.1));
     mesh.setColorAt(i, tint);
   });
-  mesh.castShadow = isTree || key === "rock";
-  mesh.receiveShadow = key !== "tuft" && key !== "flower";
   scene.add(mesh);
 }
-
-// A couple of fallen logs to sit next to
-for (let i = 0, tries = 0; i < 3 && tries < 200; tries++) {
-  const a = R(0, 6.28), r = R(trailR * 0.3, walkR - 2), x = Math.cos(a) * r, z = Math.sin(a) * r;
-  if (nearestOnTrail(x, z).d < 3.2 || !freeAt(x, z, 3)) continue;
-  const len = R(2.6, 4), rot = R(0, 3.14);
+logs.forEach(({ x, z, len, rot }) => {
   const log = new THREE.Mesh(
-    merge([paint(wobble(new THREE.CylinderGeometry(0.26, 0.3, len, 8, 3), 0.06).rotateZ(Math.PI / 2), "#6e5139", 0.08)]),
+    merge([paint(wobble(new THREE.CylinderGeometry(0.28, 0.34, len, 8, 3), 0.07).rotateZ(Math.PI / 2), pick(C.trunk), 0.08,
+      (x, y) => (y > 0.05 && rand() < 0.65 ? C.moss : null))]),
     staticMat
   );
-  log.position.set(x, groundHeight(x, z) + 0.18, z);
+  log.position.set(x, groundHeight(x, z) + 0.2, z);
   log.rotation.y = rot;
-  log.castShadow = log.receiveShadow = true;
   scene.add(log);
-  for (let k = -1; k <= 1; k++)
-    obstacles.push({ x: x + Math.cos(rot) * k * len * 0.35, z: z - Math.sin(rot) * k * len * 0.35, r: 0.45 });
-  placed.push({ x, z });
-  i++;
+});
+
+// ── Canopy: a dark ceiling of leaves with holes where the light comes in ─────
+{
+  const size = worldR * 2 + 60, S = 1024, half = size / 2;
+  const cv = document.createElement("canvas"); cv.width = cv.height = S;
+  const g = cv.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, S, S);
+  g.globalCompositeOperation = "destination-out";
+  const toPx = (m) => (m / size) * S;
+  const hole = (x, z, r) => {
+    for (let k = 0; k < 7; k++) {
+      const a = R(0, 6.28), d = R(0, r * 0.6), rr = r * R(0.45, 0.8);
+      g.beginPath();
+      g.arc(toPx(x + half + Math.cos(a) * d), toPx(z + half + Math.sin(a) * d), toPx(rr), 0, Math.PI * 2);
+      g.fill();
+    }
+  };
+  shafts.forEach((h) => hole(h.topX, h.topZ, h.r * 1.5));
+  for (let i = 0; i < 25; i++) hole(R(-half, half) * 0.7, R(-half, half) * 0.7, R(0.2, 0.6)); // tiny specks of sky
+  const tex = new THREE.CanvasTexture(cv);
+  const canopy = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: C.canopy, alphaMap: tex, alphaTest: 0.5, side: THREE.DoubleSide })
+  );
+  // rotateX(+90°) maps plane +y to world +z, so canvas rows run along +z — flip to match
+  tex.flipY = false;
+  canopy.position.y = CONFIG.canopyY;
+  scene.add(canopy);
 }
+
+// Beam shader: soft at the edges and ends, faint drifting streaks
+const beamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uTime: windUniform, color: { value: new THREE.Color(C.beam) }, strength: { value: 0.14 } },
+  vertexShader: `
+    uniform float uTime; varying float vH; varying float vEdge; varying float vDist; varying float vAng;
+    attribute float hNorm;
+    void main(){
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vec3 n = normalize(mat3(modelMatrix) * normal);
+      vec3 v = normalize(cameraPosition - wp.xyz);
+      vEdge = abs(dot(n, v));
+      vH = hNorm;
+      vAng = atan(position.z, position.x);
+      vDist = length(cameraPosition - wp.xyz);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: `
+    uniform vec3 color; uniform float strength; uniform float uTime;
+    varying float vH; varying float vEdge; varying float vDist; varying float vAng;
+    void main(){
+      float ends = smoothstep(0.0, 0.18, vH) * (1.0 - smoothstep(0.75, 1.0, vH));
+      float soft = pow(vEdge, 1.6);
+      float streak = 0.65 + 0.35 * sin(vAng * 9.0 + uTime * 0.15 + vH * 2.0);
+      float fade = exp(-vDist * 0.035);
+      gl_FragColor = vec4(color * strength * ends * soft * streak * fade, 1.0);
+    }`,
+});
+const poolTex = radialTexture([[0, "rgba(255,255,255,1)"], [0.35, "rgba(255,255,255,0.55)"], [1, "rgba(255,255,255,0)"]]);
+const poolMat = new THREE.MeshBasicMaterial({
+  map: poolTex, color: new THREE.Color(C.beam).multiplyScalar(0.55), transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, fog: true, polygonOffset: true, polygonOffsetFactor: -2,
+});
+const up = new THREE.Vector3(0, 1, 0);
+shafts.forEach((h) => {
+  const len = Math.hypot(h.topX - h.x, CONFIG.canopyY - h.y, h.topZ - h.z);
+  const geo = new THREE.CylinderGeometry(h.r * 0.9, h.r * 1.35, len, 28, 1, true);
+  const hn = new Float32Array(geo.attributes.position.count);
+  for (let i = 0; i < hn.length; i++) hn[i] = geo.attributes.position.getY(i) / len + 0.5;
+  geo.setAttribute("hNorm", new THREE.BufferAttribute(hn, 1));
+  const beam = new THREE.Mesh(geo, beamMat);
+  beam.quaternion.setFromUnitVectors(up, beamDir);
+  beam.position.set((h.x + h.topX) / 2, (h.y + CONFIG.canopyY) / 2, (h.z + h.topZ) / 2);
+  beam.renderOrder = 2;
+  scene.add(beam);
+
+  // pool of light on the ground, following the terrain
+  const r = h.r * 2.1, seg = 20, ring = 5, pos = [], uv = [], idx = [];
+  for (let j = 0; j <= ring; j++) for (let i = 0; i <= seg; i++) {
+    const a = (i / seg) * Math.PI * 2, d = (j / ring) * r;
+    const x = h.x + Math.cos(a) * d, z = h.z + Math.sin(a) * d;
+    pos.push(x, groundHeight(x, z) + 0.03, z);
+    uv.push(0.5 + (Math.cos(a) * d) / (2 * r), 0.5 + (Math.sin(a) * d) / (2 * r));
+  }
+  for (let j = 0; j < ring; j++) for (let i = 0; i < seg; i++) {
+    const a = j * (seg + 1) + i, b = a + seg + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  pg.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  pg.setIndex(idx);
+  const pool = new THREE.Mesh(pg, poolMat);
+  pool.renderOrder = 1;
+  scene.add(pool);
+});
 
 // ── Paintings ────────────────────────────────────────────────────────────────
 const clickables = [];
@@ -470,14 +602,14 @@ function makePlaque(text, sub) {
   cv.width = 512; cv.height = 128;
   const g = cv.getContext("2d");
   g.fillStyle = C.plaque; g.fillRect(0, 0, 512, 128);
-  g.fillStyle = "#3b3128"; g.textAlign = "center";
+  g.fillStyle = "#2a231c"; g.textAlign = "center";
   g.font = '500 44px "DM Sans", system-ui, sans-serif';
   let t = text;
   while (g.measureText(t).width > 470 && t.length > 4) t = t.slice(0, -2);
   if (t !== text) t = t.trimEnd() + "…";
   g.fillText(t, 256, 62);
   g.font = '300 28px "DM Sans", system-ui, sans-serif';
-  g.fillStyle = "#7a6a58";
+  g.fillStyle = "#5e5243";
   g.fillText(sub, 256, 104);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -487,15 +619,14 @@ function makePlaque(text, sub) {
 
 function buildPainting(s, img) {
   const p = s.p;
-  const aspect = img ? img.width / img.height : 0.7;
+  const aspect = img.width / img.height;
   const long = THREE.MathUtils.clamp(parseSize(p.format) || 1.3, 0.8, 1.8);
   const W = aspect >= 1 ? long : long * aspect;
   const H = aspect >= 1 ? long / aspect : long;
   const bottom = 0.72;
 
   const group = new THREE.Group();
-  const y0 = groundHeight(s.x, s.z);
-  group.position.set(s.x, y0, s.z);
+  group.position.set(s.x, groundHeight(s.x, s.z), s.z);
   group.rotation.y = s.rot;
 
   // artwork texture, downscaled so 16+ paintings stay light on the GPU
@@ -507,29 +638,25 @@ function buildPainting(s, img) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = maxAniso;
 
-  const art = new THREE.Mesh(
-    new THREE.PlaneGeometry(W, H),
-    new THREE.MeshLambertMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.22 })
-  );
+  // a little self-glow so far-away paintings still read through the fog
+  const artMat = new THREE.MeshLambertMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.17 });
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(W, H), artMat);
   art.position.set(0, bottom + H / 2, 0.031);
-  art.receiveShadow = true;
 
   const board = new THREE.Mesh(new THREE.BoxGeometry(W + 0.07, H + 0.07, 0.06), woodMat);
   board.position.set(0, bottom + H / 2, 0);
-  board.castShadow = board.receiveShadow = true;
 
   const postH = bottom + H * 0.8 + 0.5;
   [-1, 1].forEach((side) => {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, postH, 0.08), woodMat);
     post.position.set(side * (W / 2 - Math.min(0.15, W * 0.15)), postH / 2 - 0.5, -0.07);
-    post.castShadow = true;
     group.add(post);
   });
 
   const sub = [p.year, p.medium && p.medium.split(" on ")[0]].filter(Boolean).join(" · ");
   const plaque = new THREE.Mesh(
     new THREE.PlaneGeometry(0.46, 0.115),
-    new THREE.MeshLambertMaterial({ map: makePlaque(p.title || p.file, sub) })
+    (() => { const t = makePlaque(p.title || p.file, sub); return new THREE.MeshLambertMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.3 }); })()
   );
   plaque.position.set(0, bottom - 0.16, 0.045);
   const plaqueBack = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.03), woodMat);
@@ -545,10 +672,8 @@ function buildPainting(s, img) {
   s.center = group.localToWorld(new THREE.Vector3(0, bottom + H / 2, 0));
   s.H = H; s.W = W;
   s.viewDist = Math.max(2.3, Math.max(H, W) * 1.45);
-  // obstacles along the board so you can't walk through it
   for (let t = -1; t <= 1; t++)
     obstacles.push({ x: s.x + Math.cos(s.rot) * t * W * 0.4, z: s.z - Math.sin(s.rot) * t * W * 0.4, r: 0.32 });
-  renderer.shadowMap.needsUpdate = true;
 }
 
 const fontsReady = document.fonts ? document.fonts.load('500 44px "DM Sans"').catch(() => {}) : Promise.resolve();
@@ -558,39 +683,58 @@ spots.forEach((s) => {
   loader.load(IMG_DIR + s.p.file, (img) => fontsReady.then(() => buildPainting(s, img)));
 });
 
-// ── Floating light motes in the sun ──────────────────────────────────────────
-const MOTES = 260;
-const moteBase = new Float32Array(MOTES * 3), motePos = new Float32Array(MOTES * 3);
-for (let i = 0; i < MOTES; i++) {
-  const a = R(0, 6.28), r = Math.sqrt(rand()) * walkR;
-  moteBase.set([Math.cos(a) * r, R(0.4, 4.5), Math.sin(a) * r], i * 3);
+// ── Real spotlights for the nearest paintings ────────────────────────────────
+// A fixed pool of lights (cheap, and the shaders never need recompiling) that
+// fade over to whichever paintings are closest to the visitor.
+const lightPool = [];
+for (let k = 0; k < Math.min(CONFIG.litPaintings, spots.length); k++) {
+  const l = new THREE.SpotLight(C.beam, 0, 0, 0.3, 0.75, 1.2);
+  l.userData = { spot: -1, level: 0 };
+  scene.add(l, l.target);
+  lightPool.push(l);
 }
+function aimLight(l, s) {
+  const tx = s.center.x + Math.sin(s.rot) * 0.4, tz = s.center.z + Math.cos(s.rot) * 0.4;
+  const ty = s.center.y - 0.35;
+  const k = 11;
+  l.position.set(tx + beamDir.x * k, ty + beamDir.y * k, tz + beamDir.z * k);
+  l.target.position.set(tx, ty, tz);
+}
+function updateLights(dt, px, pz) {
+  const near = spots.map((s, i) => [Math.hypot(s.x - px, s.z - pz), i]).sort((a, b) => a[0] - b[0])
+    .slice(0, lightPool.length).map((e) => e[1]);
+  const held = new Set(lightPool.map((l) => l.userData.spot));
+  for (const l of lightPool) {
+    const u = l.userData;
+    const want = near.includes(u.spot);
+    u.level = Math.max(0, Math.min(1, u.level + (want ? dt : -dt) * 1.2));
+    if (!want && u.level === 0) {
+      const free = near.find((i) => !held.has(i));
+      if (free !== undefined) { u.spot = free; u.aimed = false; held.add(free); aimLight(l, spots[free]); }
+    }
+    if (u.spot >= 0 && !u.aimed && spots[u.spot].H) { aimLight(l, spots[u.spot]); u.aimed = true; }
+    l.intensity = u.level * CONFIG.shaftLight;
+  }
+}
+
+// ── Dust drifting inside the light shafts ────────────────────────────────────
+const PER_SHAFT = 28, MOTES = shafts.length * PER_SHAFT;
+const moteBase = new Float32Array(MOTES * 3), motePos = new Float32Array(MOTES * 3);
+shafts.forEach((h, si) => {
+  for (let k = 0; k < PER_SHAFT; k++) {
+    const y = R(0.3, 7), a = R(0, 6.28), d = Math.sqrt(rand()) * h.r * 1.1;
+    const along = (y - 0) / beamDir.y;
+    moteBase.set([h.x + beamDir.x * along + Math.cos(a) * d, h.y + y, h.z + beamDir.z * along + Math.sin(a) * d], (si * PER_SHAFT + k) * 3);
+  }
+});
 const moteGeo = new THREE.BufferGeometry();
 moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
-const moteTex = (() => {
-  const cv = document.createElement("canvas"); cv.width = cv.height = 64;
-  const g = cv.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, "rgba(255,248,220,1)"); gr.addColorStop(0.3, "rgba(255,236,180,0.5)"); gr.addColorStop(1, "rgba(255,230,170,0)");
-  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(cv);
-})();
 const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({
-  size: 0.12, map: moteTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: "#fff0c0", opacity: 0.8,
+  size: 0.05, map: radialTexture([[0, "rgba(255,248,225,1)"], [0.35, "rgba(255,238,200,0.45)"], [1, "rgba(255,230,180,0)"]], 64),
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: C.beam, opacity: 0.9,
 }));
 motes.frustumCulled = false;
 scene.add(motes);
-
-// Shadow camera covers the whole walkable area
-sun.position.copy(sunDir).multiplyScalar(80);
-sun.castShadow = true;
-sun.shadow.mapSize.set(isTouch ? 1536 : 2048, isTouch ? 1536 : 2048);
-const sc = sun.shadow.camera;
-sc.left = sc.bottom = -(walkR + 8);
-sc.right = sc.top = walkR + 8;
-sc.near = 1; sc.far = 220;
-sun.shadow.bias = -0.0006;
-sun.shadow.normalBias = 0.04;
-renderer.shadowMap.needsUpdate = true;
 
 // ── Visitor: walking, looking, clicking ──────────────────────────────────────
 const player = { x: trail[0].x, z: trail[0].y, yaw: 0, pitch: -0.04, y: 0, bob: 0 };
@@ -880,12 +1024,13 @@ function frame(now) {
 
   for (let i = 0; i < MOTES; i++) {
     const o = i * 3, ph = i * 1.37;
-    motePos[o] = moteBase[o] + Math.sin(t * 0.21 + ph) * 0.9;
-    motePos[o + 1] = moteBase[o + 1] + Math.sin(t * 0.33 + ph * 2.1) * 0.35;
-    motePos[o + 2] = moteBase[o + 2] + Math.cos(t * 0.17 + ph) * 0.9;
+    motePos[o] = moteBase[o] + Math.sin(t * 0.13 + ph) * 0.25;
+    motePos[o + 1] = moteBase[o + 1] + Math.sin(t * 0.09 + ph * 2.1) * 0.4;
+    motePos[o + 2] = moteBase[o + 2] + Math.cos(t * 0.11 + ph) * 0.25;
   }
   moteGeo.attributes.position.needsUpdate = true;
 
+  updateLights(dt, player.x, player.z);
   updateCaption();
   renderer.render(scene, camera);
   if (ui.loading && !ui.loading.classList.contains("is-hidden")) ui.loading.classList.add("is-hidden");
